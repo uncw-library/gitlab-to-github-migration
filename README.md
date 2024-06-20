@@ -7,10 +7,10 @@ These scripts automate that process.
 # setup
 libapps_to_github_move is a Python script.  Installing a pyvenv plus requests and dotenv modules.
 
-image_to_dockerhub, repoSed, and localRepoUpdate are Go scripts.
+imageToDockerhub, repoSed, and localRepoUpdate are Go scripts.
 
 # Script details
-image_to_dockerhub finds all the images on our self-hosted Gitlab, then pushes them to dockerhub.
+imageToDockerhub finds all the images on our self-hosted Gitlab, then pushes them to dockerhub.
 
 repoSed pulls all git repos from our self-hosted Gitlab, then updates the git url & docker image urls.  Then pushes them back to our Gitlab.
 
