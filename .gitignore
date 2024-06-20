@@ -1,6 +1,7 @@
 .env
 logs/
 repoSed/repoSed*
+imageToDockerhub/imageToDockerhub*
 libapps_to_github_move/output
 libapps_to_github_move/repos
 __pycache__

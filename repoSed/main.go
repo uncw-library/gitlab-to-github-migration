@@ -98,7 +98,7 @@ func setup() *os.File {
 	log.SetOutput(logFile)
 
 	// read .env file
-	err = godotenv.Load()
+	err = godotenv.Load("../.env")
 	if err != nil {
 		log.Fatalf("Failed to load .env file: %v", err)
 	}

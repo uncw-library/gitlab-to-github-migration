@@ -6,6 +6,8 @@ import (
 	"os"
 	"path"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func fetchAllGitlabProjectInfo() []Project {
@@ -40,7 +42,7 @@ func setupLogging() *os.File {
 }
 
 func setupConfig() {
-	err := godotenv.Load()
+	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Fatalf("Failed to load .env file: %v", err)
 	}
