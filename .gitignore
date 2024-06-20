@@ -1,0 +1,14 @@
+.env
+logs/
+repoSed/repoSed*
+libapps_to_github_move/output
+libapps_to_github_move/repos
+__pycache__
+*.log
+manual/
+repoSed/libapps-admin_projects.json
+Git_repos_proposal.docx
+gitlab_replacement_proposal.txt
+overall_plan.txt
+
+.DS_Store
