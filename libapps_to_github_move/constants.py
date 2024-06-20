@@ -10,8 +10,6 @@ try:
     LIBAPPS_ADMIN_TOKEN = config["LIBAPPS_ADMIN_TOKEN"]
     GITHUB_TOKEN = config["GITHUB_TOKEN"]
     GITLAB_COM_TOKEN = config["GITLAB_COM_TOKEN"]
-    GITLAB_COM_USER = config["GITLAB_COM_USER"]
-    GITLAB_COM_PASS = config["GITLAB_COM_PASS"]
 except KeyError as e:
     raise Exception(f"Missing required .env variable: {e}")
 

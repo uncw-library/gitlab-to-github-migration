@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 )
@@ -111,6 +112,7 @@ func enrichBranches(project *Project) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("Failed to fetch branches for project %s: %v", project.Name, err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -129,6 +131,8 @@ func enrichBranches(project *Project) error {
 
 func enrichImages(project *Project) error {
 	url := fmt.Sprintf("https://libapps-admin.uncw.edu/api/v4/projects/%d/registry/repositories", project.ID)
+	log.Printf("Fetching images for project %d", project.ID)
+	log.Printf("URL: %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -138,6 +142,7 @@ func enrichImages(project *Project) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("Failed to fetch images for project %s: %v", project.Name, err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -147,10 +152,10 @@ func enrichImages(project *Project) error {
 		return err
 	}
 
-	var images []Image
-	err = json.Unmarshal(body, &images)
-	if err != nil {
+	if err := json.Unmarshal(body, &project.Images); err != nil {
+		log.Printf("Failed to unmarshal images for project %s: %v", project.Name, err)
 		return err
 	}
+
 	return nil
 }
