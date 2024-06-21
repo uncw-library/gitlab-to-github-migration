@@ -54,4 +54,5 @@ func main() {
 	setupConfig()
 
 	doWork()
+	log.Print("Done")
 }

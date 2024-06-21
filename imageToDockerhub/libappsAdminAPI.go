@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 type Image struct {
 	Name string `json:"name"`
+	Tags []string
 }
 
 type Branch struct {
@@ -20,6 +22,10 @@ type Branch struct {
 
 type Links struct {
 	RepoBranches string `json:"repo_branches"`
+}
+
+type Token struct {
+	Token string `json:"token"`
 }
 
 type Project struct {
@@ -50,8 +56,21 @@ func fetchLibappsProjects() ([]Project, error) {
 	}
 
 	for i := range projects {
-		enrichBranches(&projects[i])
-		enrichImages(&projects[i])
+		log.Printf("Enriching %s", projects[i].Name)
+		err := enrichBranches(&projects[i])
+		if err != nil {
+			log.Printf("Failed to enrich branch: %v", err)
+			continue
+		}
+		token, err := getDockerRegistryToken(projects[i])
+		if err != nil {
+			log.Printf("Failed to get docker registry token: %v", err)
+			continue
+		}
+		err = enrichImages(&projects[i], token)
+		if err != nil {
+			return projects, err
+		}
 	}
 
 	writeProjectsToFile(projects, "libapps-admin_projects.json")
@@ -129,19 +148,95 @@ func enrichBranches(project *Project) error {
 	return nil
 }
 
-func enrichImages(project *Project) error {
-	userpass := fmt.Sprintf("%s:%s", os.Getenv("GITLAB_USER"), os.Getenv("GITLAB_PASS"))
-	tokenURL := fmt.Sprintf("https://libapps-admin.uncw.edu/jwt/auth?client_id=docker&offline_token=true&service=container_registry&scope=repository:%s:push,pull", project.PathWithNamespace)
-	output, err := runCommand(".", "curl", "--user", userpass, tokenURL, "--insecure")
+func enrichImages(project *Project, token Token) error {
+	client := &http.Client{}
+
+	url := fmt.Sprintf("http://localhost:5000/v2/%s/tags/list", project.PathWithNamespace)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-	log.Printf("Token output: %s", output)
-	var token string
-	err = json.Unmarshal([]byte(output), &token)
+
+	req.Header.Add("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token.Token))
+
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-	log.Printf("Token: %s", token)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	log.Printf("body: %s", body)
+	if err != nil {
+		log.Printf("Failed to read body: %v", err)
+		log.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	json.Unmarshal(body, &result)
+
+	if errorsInterface, ok := result["errors"]; ok {
+		// Handle errors
+		for _, errorInterface := range errorsInterface.([]interface{}) {
+			errorMap := errorInterface.(map[string]interface{})
+			if errorMap["code"] == "NAME_UNKNOWN" {
+				log.Printf("No image found for project %s", project.Name)
+				return nil
+			}
+		}
+		log.Printf("errors: %v", errorsInterface)
+		return nil
+	}
+
+	if tagsInterface, ok := result["tags"]; ok {
+		// Handle tags
+		if tagsInterface == nil {
+			project.Images = append(project.Images, Image{Name: project.Name, Tags: []string{""}})
+			return nil
+		}
+		tagsSlice := tagsInterface.([]interface{})
+		tags := make([]string, len(tagsSlice))
+		for i, tag := range tagsSlice {
+			tags[i] = tag.(string)
+		}
+		image := Image{
+			Name: result["name"].(string),
+			Tags: tags,
+		}
+		log.Printf("tags %v", tags)
+		project.Images = append(project.Images, image)
+	}
 	return nil
+}
+
+func getDockerRegistryToken(project Project) (Token, error) {
+	var token Token
+	url := fmt.Sprintf("https://libapps-admin.uncw.edu/jwt/auth?client_id=docker&offline_token=true&service=container_registry&scope=repository:%s:push,pull", project.PathWithNamespace)
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.SetBasicAuth(os.Getenv("GITLAB_USER"), os.Getenv("GITLAB_PASS"))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = json.Unmarshal(body, &token)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return token, nil
 }
