@@ -130,32 +130,18 @@ func enrichBranches(project *Project) error {
 }
 
 func enrichImages(project *Project) error {
-	url := fmt.Sprintf("https://libapps-admin.uncw.edu/api/v4/projects/%d/registry/repositories", project.ID)
-	log.Printf("Fetching images for project %d", project.ID)
-	log.Printf("URL: %s", url)
-	req, err := http.NewRequest("GET", url, nil)
+	userpass := fmt.Sprintf("%s:%s", os.Getenv("GITLAB_USER"), os.Getenv("GITLAB_PASS"))
+	tokenURL := fmt.Sprintf("https://libapps-admin.uncw.edu/jwt/auth?client_id=docker&offline_token=true&service=container_registry&scope=repository:%s:push,pull", project.PathWithNamespace)
+	output, err := runCommand(".", "curl", "--user", userpass, tokenURL, "--insecure")
 	if err != nil {
 		return err
 	}
-	privateToken := os.Getenv("LIBAPPS_ADMIN_TOKEN")
-	req.Header.Add("PRIVATE-TOKEN", privateToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("Failed to fetch images for project %s: %v", project.Name, err)
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	log.Printf("Token output: %s", output)
+	var token string
+	err = json.Unmarshal([]byte(output), &token)
 	if err != nil {
 		return err
 	}
-
-	if err := json.Unmarshal(body, &project.Images); err != nil {
-		log.Printf("Failed to unmarshal images for project %s: %v", project.Name, err)
-		return err
-	}
-
+	log.Printf("Token: %s", token)
 	return nil
 }

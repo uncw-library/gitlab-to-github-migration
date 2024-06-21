@@ -128,7 +128,7 @@ func enrichBranches(project *Project) error {
 }
 
 func enrichImages(project *Project) error {
-	url := fmt.Sprintf("https://libapps-admin.uncw.edu/api/v4/projects/%s/registry/repositories", project.ID)
+	url := fmt.Sprintf("https://libapps-admin.uncw.edu/api/v4/projects/%d/registry/repositories", project.ID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
