@@ -161,8 +161,16 @@ func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
 			project.Images = append(project.Images, v)
 		}
 	}
-	log.Printf("project.Name: %s", project.Name)
-	log.Printf("project.Images: %v", project.Images)
+	for i, pImage := range project.Images {
+		for _, gImage := range imagesFromGrep {
+			grepProjectName := strings.Split(gImage.Name, "/")[0]
+			if pImage.Name == grepProjectName {
+				for gTag, _ := range gImage.Tags {
+					project.Images[i].Tags[gTag] = true
+				}
+			}
+		}
+	}
 
 	// merge in the results from the docker API
 	result := getImageFromDockerAPI(project, token)
@@ -181,36 +189,41 @@ func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
 	}
 
 	if tagsInterface, ok := result["tags"]; ok {
-		// Handle normal case
+		var resultTags []string
 		if tagsInterface == nil {
-			for _, v := range imagesFromGrep {
-				grepProjectName := strings.Split(v.Name, "/")[0]
-				for _, projectImage := range project.Images {
-					if projectImage.Name == grepProjectName {
-						project.Images = append(project.Images, v)
-					}
+			resultTags = []string{""}
+		} else {
+			resultTagsSlice := tagsInterface.([]interface{})
+			for _, tag := range resultTagsSlice {
+				tagStr, ok := tag.(string)
+				if !ok {
+					continue
 				}
+				resultTags = append(resultTags, tagStr)
 			}
-
-			project.Images = append(project.Images, Image{Name: project.Name, Tags: make(map[string]bool)})
-			return nil
 		}
-		tagsSlice := tagsInterface.([]interface{})
-		tags := map[string]bool{}
-		for _, tag := range tagsSlice {
-			tagStr, ok := tag.(string)
-			if !ok {
-				continue
+		// try to find an existing image name, then add the tags
+		for i, pImage := range project.Images {
+			if pImage.Name == project.Name {
+				for _, tag := range resultTags {
+					project.Images[i].Tags[tag] = true
+				}
+				return nil
 			}
-			tags[tagStr] = true
+		}
+
+		// if no existing image name, then make a new image + tags & attach it.
+		newTags := map[string]bool{}
+		for _, tag := range resultTags {
+			newTags[tag] = true
 		}
 		image := Image{
-			Name: result["name"].(string),
-			Tags: tags,
+			Name: project.Name,
+			Tags: newTags,
 		}
-		log.Printf("tags %v", tags)
 		project.Images = append(project.Images, image)
 	}
+
 	return nil
 }
 
@@ -241,6 +254,7 @@ func getImageFromDockerAPI(project *Project, token Token) map[string]interface{}
 
 	var result map[string]interface{}
 	json.Unmarshal(body, &result)
+	log.Printf("result: %v", result)
 	return result
 }
 
