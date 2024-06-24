@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -8,11 +9,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type Image struct {
 	Name string `json:"name"`
-	Tags []string
+	Tags map[string]bool
 }
 
 type Branch struct {
@@ -41,6 +43,9 @@ type Project struct {
 }
 
 func fetchLibappsProjects() ([]Project, error) {
+	imagesFromGrep := getUniqueFromGreppedImages()
+	log.Printf("imagesFromGrep: %+v", imagesFromGrep)
+
 	page := 1
 	projects := []Project{}
 	for {
@@ -67,7 +72,7 @@ func fetchLibappsProjects() ([]Project, error) {
 			log.Printf("Failed to get docker registry token: %v", err)
 			continue
 		}
-		err = enrichImages(&projects[i], token)
+		err = enrichImages(&projects[i], token, imagesFromGrep)
 		if err != nil {
 			return projects, err
 		}
@@ -148,7 +153,68 @@ func enrichBranches(project *Project) error {
 	return nil
 }
 
-func enrichImages(project *Project, token Token) error {
+func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
+	// preload the image names found on the server into the project
+	for _, v := range imagesFromGrep {
+		grepProjectName := strings.Split(v.Name, "/")[0]
+		if grepProjectName == project.Name {
+			project.Images = append(project.Images, v)
+		}
+	}
+	log.Printf("project.Name: %s", project.Name)
+	log.Printf("project.Images: %v", project.Images)
+
+	// merge in the results from the docker API
+	result := getImageFromDockerAPI(project, token)
+
+	if errorsInterface, ok := result["errors"]; ok {
+		// Handle errors
+		for _, errorInterface := range errorsInterface.([]interface{}) {
+			errorMap := errorInterface.(map[string]interface{})
+			if errorMap["code"] == "NAME_UNKNOWN" {
+				log.Printf("No image found for project %s", project.Name)
+				return nil
+			}
+		}
+		log.Printf("errors: %v", errorsInterface)
+		return nil
+	}
+
+	if tagsInterface, ok := result["tags"]; ok {
+		// Handle normal case
+		if tagsInterface == nil {
+			for _, v := range imagesFromGrep {
+				grepProjectName := strings.Split(v.Name, "/")[0]
+				for _, projectImage := range project.Images {
+					if projectImage.Name == grepProjectName {
+						project.Images = append(project.Images, v)
+					}
+				}
+			}
+
+			project.Images = append(project.Images, Image{Name: project.Name, Tags: make(map[string]bool)})
+			return nil
+		}
+		tagsSlice := tagsInterface.([]interface{})
+		tags := map[string]bool{}
+		for _, tag := range tagsSlice {
+			tagStr, ok := tag.(string)
+			if !ok {
+				continue
+			}
+			tags[tagStr] = true
+		}
+		image := Image{
+			Name: result["name"].(string),
+			Tags: tags,
+		}
+		log.Printf("tags %v", tags)
+		project.Images = append(project.Images, image)
+	}
+	return nil
+}
+
+func getImageFromDockerAPI(project *Project, token Token) map[string]interface{} {
 	client := &http.Client{}
 
 	url := fmt.Sprintf("http://localhost:5000/v2/%s/tags/list", project.PathWithNamespace)
@@ -175,39 +241,7 @@ func enrichImages(project *Project, token Token) error {
 
 	var result map[string]interface{}
 	json.Unmarshal(body, &result)
-
-	if errorsInterface, ok := result["errors"]; ok {
-		// Handle errors
-		for _, errorInterface := range errorsInterface.([]interface{}) {
-			errorMap := errorInterface.(map[string]interface{})
-			if errorMap["code"] == "NAME_UNKNOWN" {
-				log.Printf("No image found for project %s", project.Name)
-				return nil
-			}
-		}
-		log.Printf("errors: %v", errorsInterface)
-		return nil
-	}
-
-	if tagsInterface, ok := result["tags"]; ok {
-		// Handle tags
-		if tagsInterface == nil {
-			project.Images = append(project.Images, Image{Name: project.Name, Tags: []string{""}})
-			return nil
-		}
-		tagsSlice := tagsInterface.([]interface{})
-		tags := make([]string, len(tagsSlice))
-		for i, tag := range tagsSlice {
-			tags[i] = tag.(string)
-		}
-		image := Image{
-			Name: result["name"].(string),
-			Tags: tags,
-		}
-		log.Printf("tags %v", tags)
-		project.Images = append(project.Images, image)
-	}
-	return nil
+	return result
 }
 
 func getDockerRegistryToken(project Project) (Token, error) {
@@ -239,4 +273,43 @@ func getDockerRegistryToken(project Project) (Token, error) {
 		log.Fatal(err)
 	}
 	return token, nil
+}
+
+func getUniqueFromGreppedImages() []Image {
+	images := []Image{}
+	projectsFile, err := os.Open("grepped_docker_images.txt")
+	if err != nil {
+		log.Fatal("Need file 'grepped_docker_images.txt' in appdir with names of all images currently running")
+	}
+	defer projectsFile.Close()
+	// only add unique image to greppedImages
+	scanner := bufio.NewScanner(projectsFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.Contains(line, "libapps-admin.uncw.edu") {
+			continue
+		}
+		line = strings.TrimSpace(line)
+		line = strings.ReplaceAll(line, "'", "")
+		line = strings.ReplaceAll(line, "\"", "")
+
+		imageTag := strings.Replace(line, "libapps-admin.uncw.edu:8000/randall-dev/", "", -1)
+		split := strings.Split(imageTag, ":")
+		var name, tag string
+		if len(split) < 2 {
+			name, tag = split[0], ""
+		} else {
+			name, tag = split[0], split[1]
+		}
+
+		for _, image := range images {
+			if image.Name == name {
+				image.Tags[tag] = true
+				break
+			}
+		}
+		newImage := Image{Name: name, Tags: map[string]bool{tag: true}}
+		images = append(images, newImage)
+	}
+	return images
 }
