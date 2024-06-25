@@ -13,8 +13,8 @@ import (
 )
 
 type Image struct {
-	Name string `json:"name"`
-	Tags map[string]bool
+	Name string          `json:"name"`
+	Tags map[string]bool `json:"tags"`
 }
 
 type Branch struct {
@@ -31,20 +31,19 @@ type Token struct {
 }
 
 type Project struct {
-	ID                int    `json:"id"`
-	Name              string `json:"name"`
-	URL               string `json:"http_url_to_repo"`
-	Archived          bool   `json:"archived"`
-	Visibility        string `json:"visibility"`
-	PathWithNamespace string `json:"path_with_namespace"`
-	Links             Links  `json:"_links"`
-	Branches          []Branch
-	Images            []Image
+	ID                int      `json:"id"`
+	Name              string   `json:"name"`
+	URL               string   `json:"http_url_to_repo"`
+	Archived          bool     `json:"archived"`
+	Visibility        string   `json:"visibility"`
+	PathWithNamespace string   `json:"path_with_namespace"`
+	Links             Links    `json:"_links"`
+	Branches          []Branch `json:"branches"`
+	Images            []Image  `json:"images"`
 }
 
 func fetchLibappsProjects() ([]Project, error) {
 	imagesFromGrep := getUniqueFromGreppedImages()
-	log.Printf("imagesFromGrep: %+v", imagesFromGrep)
 
 	page := 1
 	projects := []Project{}
@@ -62,6 +61,11 @@ func fetchLibappsProjects() ([]Project, error) {
 
 	for i := range projects {
 		log.Printf("Enriching %s", projects[i].Name)
+		// if projects[i].Name != "wildcard-proxy" {
+		// 	log.Print("Skipping all but wildcard-proxy")
+		// 	continue
+		// }
+
 		err := enrichBranches(&projects[i])
 		if err != nil {
 			log.Printf("Failed to enrich branch: %v", err)
@@ -154,6 +158,12 @@ func enrichBranches(project *Project) error {
 }
 
 func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
+	// if project.Name != "wildcard-proxy" {
+	// 	log.Print("Skipping all but wildcard-proxy")
+	// 	return nil
+	// }
+
+	log.Printf("Enriching images for %s", project.Name)
 	// preload the image names found on the server into the project
 	for _, v := range imagesFromGrep {
 		grepProjectName := strings.Split(v.Name, "/")[0]
@@ -162,10 +172,14 @@ func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
 		}
 	}
 	for i, pImage := range project.Images {
+		// log.Printf("Looping through images: %s", pImage.Name)
 		for _, gImage := range imagesFromGrep {
+			// log.Printf("Looping through grepped images: %s", gImage.Name)
 			grepProjectName := strings.Split(gImage.Name, "/")[0]
+			// log.Printf("grepProjectName: %s", grepProjectName)
 			if pImage.Name == grepProjectName {
-				for gTag, _ := range gImage.Tags {
+				// log.Printf("Found matching image: %s %s", pImage.Name, gImage.Name)
+				for gTag := range gImage.Tags {
 					project.Images[i].Tags[gTag] = true
 				}
 			}
@@ -174,7 +188,6 @@ func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
 
 	// merge in the results from the docker API
 	result := getImageFromDockerAPI(project, token)
-
 	if errorsInterface, ok := result["errors"]; ok {
 		// Handle errors
 		for _, errorInterface := range errorsInterface.([]interface{}) {
@@ -191,7 +204,8 @@ func enrichImages(project *Project, token Token, imagesFromGrep []Image) error {
 	if tagsInterface, ok := result["tags"]; ok {
 		var resultTags []string
 		if tagsInterface == nil {
-			resultTags = []string{""}
+			log.Printf("nil tagsInsterface for project %s", project.Name)
+			return nil
 		} else {
 			resultTagsSlice := tagsInterface.([]interface{})
 			for _, tag := range resultTagsSlice {
@@ -254,7 +268,6 @@ func getImageFromDockerAPI(project *Project, token Token) map[string]interface{}
 
 	var result map[string]interface{}
 	json.Unmarshal(body, &result)
-	log.Printf("result: %v", result)
 	return result
 }
 
@@ -290,6 +303,7 @@ func getDockerRegistryToken(project Project) (Token, error) {
 }
 
 func getUniqueFromGreppedImages() []Image {
+	// log.Printf("Getting unique images from grepped images")
 	images := []Image{}
 	projectsFile, err := os.Open("grepped_docker_images.txt")
 	if err != nil {
@@ -300,7 +314,14 @@ func getUniqueFromGreppedImages() []Image {
 	scanner := bufio.NewScanner(projectsFile)
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// if !strings.Contains(line, "wildcard-proxy") {
+		// 	log.Print("skipping line without wildcard-proxy")
+		// 	continue
+		// }
+
 		if !strings.Contains(line, "libapps-admin.uncw.edu") {
+			log.Printf("Skipping line without libapps-admin.uncw.edu: %s", line)
 			continue
 		}
 		line = strings.TrimSpace(line)
@@ -316,11 +337,15 @@ func getUniqueFromGreppedImages() []Image {
 			name, tag = split[0], split[1]
 		}
 
+		breakout := false
 		for _, image := range images {
 			if image.Name == name {
 				image.Tags[tag] = true
-				break
+				breakout = true
 			}
+		}
+		if breakout {
+			break
 		}
 		newImage := Image{Name: name, Tags: map[string]bool{tag: true}}
 		images = append(images, newImage)
