@@ -10,22 +10,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func fetchAllGitlabProjectInfo() []Project {
-	projects, err := fetchLibappsProjects()
-	if err != nil {
-		log.Fatalf("Failed to fetch projects: %v", err)
-	}
-	return projects
-}
-
-func doWork() {
-	// get all image names
-	// setup dockerhub repos
-	// for each image, get image, tag, push to dockerhub
-	projects := fetchAllGitlabProjectInfo()
-	fmt.Printf("Fetched %v projects\n", len(projects))
-}
-
 func setupLogging() *os.File {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	err := os.Mkdir("logs", 0755)
@@ -48,11 +32,36 @@ func setupConfig() {
 	}
 }
 
+// func devHack(file string) ([]Project, error) {
+// 	data, err := ioutil.ReadFile(file)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read file: %v", err)
+// 	}
+// 	var projects []Project
+// 	if err := json.Unmarshal(data, &projects); err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal JSON: %v", err)
+// 	}
+// 	return projects, nil
+// }
+
 func main() {
 	logFile := setupLogging()
 	defer logFile.Close()
 	setupConfig()
 
-	doWork()
+	projects, err := fetchLibappsProjects()
+	if err != nil {
+		log.Fatalf("Failed to fetch projects: %v", err)
+	}
+
+	// debug: skip fetching projects
+	// projects, err := devHack("manualProjects.json")
+	// if err != nil {
+	// 	log.Fatalf("Failed to fetch projects: %v", err)
+	// }
+
+	if err := migrateImages(projects); err != nil {
+		log.Fatalf("Failed to migrate repos: %v", err)
+	}
 	log.Print("Done")
 }
