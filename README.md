@@ -4,8 +4,6 @@ UNCW-Library is migrating it's git repos from a Gitlab.com instance and from a s
 
 These scripts automate that process.
 
-# setup
-libapps_to_github_move is a Python script.  Installing a pyvenv plus requests and dotenv modules.
 
 imageToDockerhub, repoSed, and localRepoUpdate are Go scripts.
 
@@ -13,5 +11,7 @@ imageToDockerhub, repoSed, and localRepoUpdate are Go scripts.
 imageToDockerhub finds all the images on our self-hosted Gitlab, then pushes them to dockerhub.
 
 repoSed pulls all git repos from our self-hosted Gitlab, then updates the git url & docker image urls.  Then pushes them back to our Gitlab.
+
+libapps_to_github_move is a Python script.  It moves the git repo (all branches) from gitlab to github.  Install a pyvenv plus requests and dotenv modules.
 
 localRepoUpdate runs on each local machine.  It finds the git repos & revises their remote origin & default branch.
